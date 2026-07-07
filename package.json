@@ -1,28 +1,42 @@
 {
   "name": "token-bucket-rate-limiter-service",
   "version": "1.0.0",
-  "description": "",
-  "main": "server.ts",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "description": "Standalone production-ready rate limiter API using token bucket and sliding window algorithms.",
+  "main": "src/server.js",
   "type": "module",
+  "admin:key:create": "node src/scripts/createAdminKey.js",
+"admin:key:list": "node src/scripts/listAdminKeys.js",
+  "scripts": {
+  "dev": "nodemon src/server.js",
+  "start": "node src/server.js",
+  "migrate": "node src/db/migrate.js",
+  "load:token": "k6 run tests/load/token-bucket-500rps.js",
+  "load:sliding": "k6 run tests/load/sliding-window-500rps.js",
+  "admin:key:create": "node src/scripts/createAdminKey.js"
+},
+  "keywords": [
+    "rate-limiter",
+    "token-bucket",
+    "sliding-window",
+    "redis",
+    "postgres"
+  ],
+  "author": "Saurabh Bisht",
+  "license": "MIT",
   "dependencies": {
-    "dotenv": "^17.4.2",
-    "fastify": "^5.9.0",
-    "pg": "^8.22.0",
-    "zod": "^4.4.3"
+    "compression": "^1.8.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.18.3",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.4.1",
+    "pg": "^8.12.0",
+    "pino": "^9.4.0",
+    "pino-http": "^10.3.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/node": "^26.1.0",
-    "@types/pg": "^8.20.0",
-    "tsx": "^4.23.0",
-    "typescript": "^6.0.3"
+    "nodemon": "^3.1.7",
+    "pino-pretty": "^13.1.3"
   }
 }

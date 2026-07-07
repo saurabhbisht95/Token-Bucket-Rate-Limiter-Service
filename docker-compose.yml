@@ -1,31 +1,35 @@
 services:
-  api:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      PORT: 8080
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/ratelimiter
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      - postgres
-      - redis
-
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
+    container_name: limiter-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ratelimiter
+      POSTGRES_DB: rate_limiter
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - limiter_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rate_limiter"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
-    image: redis:7
+    image: redis:7-alpine
+    container_name: limiter-redis
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     ports:
       - "6379:6379"
+    volumes:
+      - limiter_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
-  postgres_data:
+  limiter_postgres_data:
+  limiter_redis_data:
