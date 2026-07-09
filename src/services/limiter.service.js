@@ -108,10 +108,18 @@ function normalizeLuaResult(result, algorithm) {
   };
 }
 
+function limiterScope(config) {
+  if (!config.projectId) {
+    return `global:${config.clientKey}`;
+  }
+
+  return `project:${config.projectId}:${config.clientKey}`;
+}
+
 async function checkTokenBucket(config, cost) {
   const nowMs = Date.now();
   const refillRatePerMs = config.requestsPerSecond / 1000;
-  const key = `rl:tb:${config.clientKey}`;
+  const key = `rl:tb:${limiterScope(config)}`;
 
   const timeToFullyRefillMs = Math.ceil(
     (config.burstSize / config.requestsPerSecond) * 1000
@@ -134,7 +142,7 @@ async function checkTokenBucket(config, cost) {
 async function checkSlidingWindow(config, cost) {
   const nowMs = Date.now();
   const windowMs = config.windowSeconds * 1000;
-  const key = `rl:sw:${config.clientKey}`;
+  const key = `rl:sw:${limiterScope(config)}`;
 
   const limit = Math.max(1, Math.floor(config.requestsPerSecond * config.windowSeconds));
   const requestId = `${nowMs}:${crypto.randomUUID()}`;
@@ -165,6 +173,7 @@ export async function checkLimit(config, cost = 1) {
   }
 
   await recordDecision({
+    projectId: config.projectId,
     clientKey: config.clientKey,
     allowed: result.allowed,
     algorithm: config.algorithm

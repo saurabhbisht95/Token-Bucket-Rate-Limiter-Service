@@ -3,6 +3,7 @@ import { env } from '../config/env.js';
 import {
   findClientByKey,
   findClientByProjectAndKey,
+  listClientsByProject,
   listClients,
   updateClient,
   updateClientForProject,
@@ -95,4 +96,8 @@ export async function updateExistingClientConfigForProject(projectId, clientKey,
 
 export async function getAllClientConfigs() {
   return listClients();
+}
+
+export async function getClientConfigsForProject(projectId) {
+  return listClientsByProject(projectId);
 }

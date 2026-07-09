@@ -6,6 +6,9 @@ function mapRuntimeApiKey(row) {
   return {
     id: row.id,
     projectId: row.project_id,
+    companyId: row.company_id,
+    companyStatus: row.company_status,
+    projectIsActive: row.project_is_active,
     name: row.name,
     keyPrefix: row.key_prefix,
     keyHash: row.key_hash,
@@ -42,11 +45,24 @@ export async function createRuntimeApiKey({
 export async function findActiveRuntimeApiKeyByHash(keyHash) {
   const result = await query(
     `
-    SELECT *
+    SELECT
+      runtime_api_keys.*,
+      projects.company_id,
+      projects.is_active AS project_is_active,
+      companies.status AS company_status
     FROM runtime_api_keys
+    INNER JOIN projects
+      ON projects.id = runtime_api_keys.project_id
+    LEFT JOIN companies
+      ON companies.id = projects.company_id
     WHERE key_hash = $1
-      AND is_active = true
-      AND revoked_at IS NULL
+      AND runtime_api_keys.is_active = true
+      AND runtime_api_keys.revoked_at IS NULL
+      AND projects.is_active = true
+      AND (
+        projects.company_id IS NULL
+        OR companies.status = 'active'
+      )
     LIMIT 1;
     `,
     [keyHash]
@@ -80,6 +96,21 @@ export async function listRuntimeApiKeysByProject(projectId) {
   return result.rows.map(mapRuntimeApiKey);
 }
 
+export async function findRuntimeApiKeyByIdForProject(id, projectId) {
+  const result = await query(
+    `
+    SELECT *
+    FROM runtime_api_keys
+    WHERE id = $1
+      AND project_id = $2
+    LIMIT 1;
+    `,
+    [id, projectId]
+  );
+
+  return mapRuntimeApiKey(result.rows[0]);
+}
+
 export async function revokeRuntimeApiKey(id) {
   const result = await query(
     `
@@ -91,6 +122,23 @@ export async function revokeRuntimeApiKey(id) {
     RETURNING *;
     `,
     [id]
+  );
+
+  return mapRuntimeApiKey(result.rows[0]);
+}
+
+export async function revokeRuntimeApiKeyForProject(id, projectId) {
+  const result = await query(
+    `
+    UPDATE runtime_api_keys
+    SET
+      is_active = false,
+      revoked_at = now()
+    WHERE id = $1
+      AND project_id = $2
+    RETURNING *;
+    `,
+    [id, projectId]
   );
 
   return mapRuntimeApiKey(result.rows[0]);

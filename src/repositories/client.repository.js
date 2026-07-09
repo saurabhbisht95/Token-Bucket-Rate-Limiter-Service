@@ -96,6 +96,20 @@ export async function listClients() {
   return result.rows.map(mapClient);
 }
 
+export async function listClientsByProject(projectId) {
+  const result = await query(
+    `
+    SELECT *
+    FROM clients
+    WHERE project_id = $1
+    ORDER BY created_at DESC;
+    `,
+    [projectId]
+  );
+
+  return result.rows.map(mapClient);
+}
+
 export async function updateClient(clientKey, input) {
   const existing = await findClientByKey(clientKey);
 

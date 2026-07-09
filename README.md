@@ -11,6 +11,8 @@ It supports:
 * Per-client configurable limits
 * Redis-backed atomic concurrency control
 * PostgreSQL-backed durable configuration
+* Company admin signup and login
+* Browser dashboard for projects, limits, runtime keys, stats, and audit logs
 * Admin API keys
 * Runtime/customer API keys
 * Project-based client ownership
@@ -69,6 +71,7 @@ This forces the system to handle real backend problems:
 * Redis-backed atomic limiter state
 * PostgreSQL-backed durable client configuration
 * Race-condition safe token spending using Redis Lua scripts
+* Company accounts and session-based dashboard access
 * Standard rate-limit response headers
 * Admin APIs for managing projects and client limits
 * Runtime API keys for customer/service access
@@ -256,6 +259,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/rate_limiter
 REDIS_URL=redis://localhost:6379
 
 CONFIG_CACHE_TTL_SECONDS=60
+CORS_ORIGINS=
 ```
 
 Start PostgreSQL and Redis:
@@ -270,11 +274,26 @@ Run database migrations:
 npm run migrate
 ```
 
+Build the React dashboard:
+
+```bash
+npm run build
+```
+
 Start the API:
 
 ```bash
 npm run dev
 ```
+
+Open the SaaS dashboard:
+
+```txt
+Company admin dashboard: http://localhost:8080
+Superadmin dashboard:    http://localhost:8080/superadmin
+```
+
+Do not open `localhost:5432` in the browser. Port `5432` is PostgreSQL, not the web app.
 
 Health check:
 
@@ -312,13 +331,73 @@ Expected response:
 | `PORT`                     | HTTP server port                                        |
 | `DATABASE_URL`             | PostgreSQL connection string                            |
 | `REDIS_URL`                | Redis connection string                                 |
+| `CORS_ORIGINS`             | Optional comma-separated browser origins for API CORS   |
 | `CONFIG_CACHE_TTL_SECONDS` | Redis cache TTL for client config                       |
 
 ---
 
-## Creating an Admin API Key
+## Frontend Development
 
-Admin APIs require an admin API key.
+The dashboard is a Vite React app in `frontend/`.
+
+Build it into Express static assets:
+
+```bash
+npm run build
+```
+
+Run the React dev server separately:
+
+```bash
+npm run frontend:dev
+```
+
+Vite runs on `http://localhost:5173` and proxies `/v1` API calls to the Express API on `http://localhost:8080`.
+
+---
+
+## SaaS Product Flow
+
+The normal customer flow is:
+
+```txt
+Company admin signs up
+        ↓
+Company account is created
+        ↓
+Company admin logs in
+        ↓
+Dashboard manages projects and limits
+        ↓
+Runtime keys are generated from dashboard
+        ↓
+Company backend calls authenticated limiter endpoint
+```
+
+Dashboard sessions are stored as hashed opaque tokens in PostgreSQL and sent to the browser as HttpOnly cookies. Runtime API keys are still shown only once and stored as SHA-256 hashes.
+
+---
+
+## Dashboard Roles
+
+| Role | URL | Login method | Purpose |
+| ---- | --- | ------------ | ------- |
+| Company admin | `http://localhost:8080` | Email and password signup/login | Manage that company's projects, limits, runtime keys, stats, and audit logs |
+| Superadmin / owner | `http://localhost:8080/superadmin` | Owner admin API key | See all companies, inspect tenant resources, suspend/reactivate companies, review owner keys and global audit logs |
+
+Create an owner admin API key with:
+
+```bash
+npm run admin:key:create -- owner-console
+```
+
+Use that generated `rlk_admin_*` key on the superadmin login screen.
+
+---
+
+## Creating an Owner Admin API Key
+
+Owner/admin APIs require an admin API key. This is still useful for internal maintenance and legacy automation, but normal companies should use signup/login and the dashboard.
 
 Create one locally:
 
@@ -346,24 +425,6 @@ x-admin-api-key: rlk_admin_6d70f023ce00_xxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 Only the hash of the key is stored in PostgreSQL. The raw API key is shown only once.
-
----
-
-## Core Production Flow
-
-The production flow is:
-
-```txt
-Admin creates project
-        ↓
-Admin creates client limit config under project
-        ↓
-Admin creates runtime API key for project
-        ↓
-External service calls authenticated limiter endpoint
-        ↓
-Limiter returns ALLOW or DENY
-```
 
 ---
 
@@ -421,6 +482,79 @@ Response:
   }
 }
 ```
+
+---
+
+# SaaS Auth and Dashboard APIs
+
+The dashboard uses these routes behind the browser UI at `/`.
+
+## Company Signup
+
+```http
+POST /v1/auth/signup
+```
+
+Request:
+
+```json
+{
+  "companyName": "Acme Inc",
+  "adminName": "Asha Admin",
+  "email": "asha@example.com",
+  "password": "StrongPass123!"
+}
+```
+
+Response sets an HttpOnly session cookie:
+
+```json
+{
+  "message": "Account created",
+  "company": {
+    "id": "COMPANY_ID",
+    "name": "Acme Inc",
+    "slug": "acme-inc",
+    "status": "active"
+  },
+  "admin": {
+    "id": "ADMIN_ID",
+    "companyId": "COMPANY_ID",
+    "name": "Asha Admin",
+    "email": "asha@example.com",
+    "role": "owner"
+  }
+}
+```
+
+## Login, Current Session, Logout
+
+```http
+POST /v1/auth/login
+GET /v1/auth/me
+POST /v1/auth/logout
+```
+
+## Dashboard Management
+
+All dashboard routes require the company admin session cookie or a Bearer session token.
+
+```http
+GET  /v1/dashboard/summary
+POST /v1/dashboard/projects
+GET  /v1/dashboard/projects
+GET  /v1/dashboard/projects/:projectId
+POST /v1/dashboard/projects/:projectId/runtime-keys
+GET  /v1/dashboard/projects/:projectId/runtime-keys
+POST /v1/dashboard/projects/:projectId/runtime-keys/:id/revoke
+POST /v1/dashboard/projects/:projectId/clients
+GET  /v1/dashboard/projects/:projectId/clients
+PATCH /v1/dashboard/projects/:projectId/clients/:clientKey
+GET  /v1/dashboard/projects/:projectId/clients/:clientKey/stats
+GET  /v1/dashboard/audit-logs
+```
+
+Dashboard project, client, runtime-key, stats, and audit queries are scoped to the logged-in company.
 
 ---
 
@@ -1041,12 +1175,15 @@ Raw keys are shown only once when generated.
 Recommended production improvements:
 
 * Use a secrets manager
-* Rotate admin API keys regularly
+* Put the dashboard behind HTTPS so Secure cookies work correctly in production
+* Set `CORS_ORIGINS` only to trusted browser origins when cross-origin dashboard/API access is needed
+* Rotate owner admin API keys regularly
+* Rotate runtime API keys per project and environment
 * Use separate keys per environment
-* Restrict admin APIs by network or VPN
-* Add rate limiting to admin APIs too
-* Add HTTPS at the load balancer level
-* Add request audit trails for sensitive actions
+* Restrict owner admin APIs by network or VPN
+* Add rate limiting to auth and dashboard APIs too
+* Keep project-scoped client keys unique per company project
+* Review dashboard audit trails for sensitive actions
 
 ---
 

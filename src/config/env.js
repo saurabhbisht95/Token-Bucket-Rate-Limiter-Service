@@ -11,6 +11,8 @@ const envSchema = z.object({
   // We keep this optional now because admin auth will use hashed DB keys.
   ADMIN_API_KEY: z.string().optional(),
 
+  CORS_ORIGINS: z.string().optional(),
+
   CONFIG_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60)
 });
 
